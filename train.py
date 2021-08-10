@@ -16,7 +16,6 @@ from pathlib import Path
 from docopt import docopt
 from tqdm import tqdm
 from data_loading import get_dataset
-
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
