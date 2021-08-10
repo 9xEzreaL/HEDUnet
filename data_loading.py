@@ -1,0 +1,40 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, ConcatDataset, Subset
+from deep_learning.utils.data import InriaDataset, Augment
+from pathlib import Path
+
+
+def transform_fn(sample, eps=1e-7):
+    data, mask = sample
+    data = (data.to(torch.float) / 127.) - 1.
+    mask = mask.to(torch.float)
+    return data, mask
+
+
+def get_dataset(dataset, names=['images', 'gt'], augment=False):
+    ds_path = 'data/AerialImageDataset/' + dataset
+    dataset = InriaDataset(ds_path, names, transform=transform_fn)
+    if augment:
+        dataset = Augment(dataset)
+    return dataset
+
+
+def get_batch(data_names):
+    base_dir = Path('data/scenes')
+    data = []
+    for sample in data_names:
+        scene, tile = sample.split('/')
+        tensor_file = base_dir / scene / 'scene' / f'{tile}.pt'
+        tensor = torch.load(tensor_file)
+        mask_file = base_dir / scene / 'mask' / f'{tile}.pt'
+        mask = torch.load(mask_file)
+
+        data.append(transform_fn((tensor, mask)))
+
+    out = []
+    for tensors in zip(*data):
+        out.append(torch.stack(tensors, dim=0))
+
+    return out

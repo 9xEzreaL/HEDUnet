@@ -1,0 +1,19 @@
+# Model Specification
+model: HEDUNet
+dataset: knee
+model_args:
+  input_channels: 3
+  base_channels: 16
+  stack_height: 5
+  batch_norm: true
+# Training Parameters
+feature_pyramid: true
+loss_args:
+  type: AutoBCE
+batch_size: 8
+epochs: 100
+learning_rate: 0.001
+# Data Configuration
+data_threads: 4
+# Visualization
+visualization_tiles: [0, 7, 14, 38, 120, 74, 57, 39, 101]
