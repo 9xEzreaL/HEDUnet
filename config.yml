@@ -9,7 +9,7 @@ model_args:
 # Training Parameters
 feature_pyramid: true
 loss_args:
-  type: AutoBCE
+  type: BCEwLogits
 batch_size: 8
 epochs: 100
 learning_rate: 0.001

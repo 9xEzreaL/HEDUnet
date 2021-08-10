@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# torch.nn.CrossEntropyLoss  # target = Long, 1D
+# torch.nn.BCELoss
+# torch.nnBCEWithLogitsLoss (This loss combines a Sigmoid layer and the BCELoss in one single class)
 
 def get_loss(loss_args):
     loss_type = loss_args['type']
@@ -14,13 +17,17 @@ def get_loss(loss_args):
         if func == 'Summed':
             new_args['type'] = arg
             return sum_loss(get_loss(new_args))
-    if loss_type == 'BCE':
+    if loss_type == 'BCEwLogits':
+        print('BCEwLogits')
         loss_class = nn.BCEWithLogitsLoss
         if 'pos_weight' in loss_args:
             args['pos_weight'] = loss_args['pos_weight'] * torch.ones([])
+    elif loss_type == 'CE':
+        loss_class = nn.CrossEntropyLoss
     elif loss_type == 'FocalLoss':
         return focal_loss_with_logits
     elif loss_type == 'AutoBCE':
+        print('Use AutoBCE')
         return auto_weight_bce
     else:
         raise ValueError(f"No Loss of type {loss_type} known")

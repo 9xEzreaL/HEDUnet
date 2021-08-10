@@ -114,23 +114,40 @@ def full_forward(model, img, target, metrics):
     # new   ========
     cuda = True if torch.cuda.is_available() else False
     dev = torch.device("cpu") if not cuda else torch.device("cuda")
-    loss_args = {"type":"BCE"}
-    loss_function = get_loss(loss_args=loss_args)
+    #loss_args = {"type":"BCE"}
+    #loss_function = get_loss(loss_args=loss_args)
 
     img = img.to(dev)
     target = target.to(dev)
     y_hat, y_hat_levels = model(img)
     target = get_pyramid(target)
     loss_levels = []
-    
-    for y_hat_el, y in zip(y_hat_levels, target):
-        loss_levels.append(loss_function(y_hat_el, y))
+
+    if config['loss_args']['type'] == 'CE':
+        y_hat_levels = [x.view(x.shape[0], x.shape[1], x.shape[2]*x.shape[3]) for x in y_hat_levels]
+        target = [x.view(x.shape[0], x.shape[1], x.shape[2]*x.shape[3])
+                      .type(torch.cuda.LongTensor) for x in target]
+
+        # y_hat_levels[n].shape = (B, 4, H, W)
+        # y_hat_levels_seg[n] = y_hat_levels[n][B, :2, H, W]
+        # y_hat_levels_edge[n] = y_hat_levels[n][B, 2:, H, W]
+
+        # target[n].shape = (B, 2, H, W)
+        # target_seg[n] = target_seg[n][B, :1, H, W]
+        # target_edge[n] = target_seg[n][B, 1:, H, W]
+
+        # loss_seg = loss_function(y_hat_levels_seg, target_seg)
+        # loss_edge = loss_function(y_hat_levels_edge, target_edge) XXXXX
+
     # Overall Loss
     loss_final = loss_function(y_hat, target[0])
-    # Pyramid Losses (Deep Supervision)
-    loss_deep_super = torch.sum(torch.stack(loss_levels))
-    loss = loss_final + loss_deep_super
 
+    # Pyramid Losses (Deep Supervision)
+    for y_hat_el, y in zip(y_hat_levels, target):
+        loss_levels.append(loss_function(y_hat_el, y))
+    loss_deep_super = torch.sum(torch.stack(loss_levels))
+
+    loss = loss_final + loss_deep_super
 
     # dice cofficient
     smooth = 0.0001
