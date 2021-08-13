@@ -9,11 +9,12 @@ class HEDUNet(nn.Module):
     A straight-forward UNet implementation
     """
 
-    def __init__(self, input_channels, output_channels=2, base_channels=16,
+    def __init__(self, input_channels, output_channels, base_channels=16,
                  conv_block=Convx2, padding_mode='replicate', batch_norm=False,
                  squeeze_excitation=False, merging='attention', stack_height=5,
                  deep_supervision=True):
         super().__init__()
+
         bc = base_channels
         if squeeze_excitation:
             conv_block = WithSE(conv_block)

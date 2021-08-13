@@ -1,6 +1,5 @@
 from torch.utils.data import DataLoader
 from deep_learning import get_loss, get_model, Metrics, flatui_cmap
-
 from loaders.loader_imorphics import LoaderImorphics
 from train import full_forward, showexample
 from PIL import Image
@@ -38,7 +37,6 @@ def validation(model, metrics, batch_size, dataset, destination):
             pic = Image.new(
                 'RGB', (UNIT_WIDTH_SIZE * COL, UNIT_HEIGHT_SIZE * ROW))
 
-
             # B = batch_size
             B = img.shape[0]
             for j in range(res['target'].shape[1]):
@@ -46,7 +44,6 @@ def validation(model, metrics, batch_size, dataset, destination):
                 # print("j: ",j)
                 y = res['target'][0, j, ::]
                 z = norm_0_1(res['y_hat'][0, j, ::])
-
 
                 # from tensor to img
                 unloader = transforms.ToPILImage()
@@ -68,10 +65,7 @@ def validation(model, metrics, batch_size, dataset, destination):
 
 
 
-
-
 if __name__ == "__main__":
-
     args_d = {'mask_name': 'bone_resize_B_crop_00',
               'data_path': os.getenv("HOME") + '/Dataset/OAI_DESS_segmentation/',
               'mask_used': [['femur', 'tibia'], [1], [2, 3]],
@@ -88,20 +82,20 @@ if __name__ == "__main__":
     dev = torch.device("cpu") if not cuda else torch.device("cuda")
 
     # loss
-    loss_args = {"type": "BCE"}
+    loss_args = {"type": "CE"}
     loss_function = get_loss(loss_args=loss_args)
 
     pathlist = os.listdir(
-        '/home/ghc/PycharmProjects/HED-UNet-zhi/logs/2021-08-08_22-55-19/checkpoints')
+        '/home/ghc/PycharmProjects/HED-UNet-zhi/logs/2021-08-13_01-44-27/checkpoints')
     pathlist = sorted(pathlist)
     for i in pathlist:
         path = os.path.join(
-            '/home/ghc/PycharmProjects/HED-UNet-zhi/logs/2021-08-08_22-55-19/checkpoints', i)
+            '/home/ghc/PycharmProjects/HED-UNet-zhi/logs/2021-08-13_01-44-27/checkpoints', i)
         model = torch.load(path)
         metrics = Metrics()
         validation(model,
                    metrics,
                    batch_size=8,
                    dataset=val_dataset,
-                   destination='/home/ghc/PycharmProjects/HED-UNet-zhi/logs/2021-08-08_22-55-19/figures/')
+                   destination='/home/ghc/PycharmProjects/HED-UNet-zhi/logs/2021-08-13_01-44-27/figures/')
 

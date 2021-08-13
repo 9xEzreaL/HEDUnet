@@ -22,6 +22,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
+from DiceCofficient import BCEDiceCofficient, accuracy, CEDiceCofficient
 from torchvision import datasets
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
@@ -35,6 +36,10 @@ except ModuleNotFoundError as e:
 
 from deep_learning import get_loss, get_model, Metrics, flatui_cmap
 from deep_learning.utils.data import Augment
+
+cli_args = docopt(__doc__, version="Usecase 2 Training Script 1.0")
+config_file = Path(cli_args['--config'])
+config = yaml.load(config_file.open(), Loader=yaml.SafeLoader)
 
 
 def showexample(idx, img, target, prediction):
@@ -114,101 +119,63 @@ def full_forward(model, img, target, metrics):
     # new   ========
     cuda = True if torch.cuda.is_available() else False
     dev = torch.device("cpu") if not cuda else torch.device("cuda")
-    #loss_args = {"type":"BCE"}
-    #loss_function = get_loss(loss_args=loss_args)
+    loss_args = {"type":"CE"}
+    loss_function = get_loss(loss_args=loss_args)
 
     img = img.to(dev)
     target = target.to(dev)
     y_hat, y_hat_levels = model(img)
     target = get_pyramid(target)
     loss_levels = []
+    loss_levels_seg = []
+    loss_levels_edge = []
 
+    # loss
     if config['loss_args']['type'] == 'CE':
         y_hat_levels = [x.view(x.shape[0], x.shape[1], x.shape[2]*x.shape[3]) for x in y_hat_levels]
-        target = [x.view(x.shape[0], x.shape[1], x.shape[2]*x.shape[3])
+        n = y_hat.size(0)
+        y_hat = y_hat.view(n, 4, -1)
+        Target = [x.view(x.shape[0], x.shape[1], x.shape[2]*x.shape[3])
                       .type(torch.cuda.LongTensor) for x in target]
 
-        # y_hat_levels[n].shape = (B, 4, H, W)
-        # y_hat_levels_seg[n] = y_hat_levels[n][B, :2, H, W]
-        # y_hat_levels_edge[n] = y_hat_levels[n][B, 2:, H, W]
+        for y_hat_el, y in zip(y_hat_levels, Target):
+            print('#')
+            print(y_hat_el.shape)
+            print(y.shape)
+            y_hat_levels_seg = y_hat_el[:, :2, :]
+            y_hat_levels_edge = y_hat_el[:, 2:, :]
+            target_seg = (y[:, :1, :]).squeeze(axis = 1)  #
+            target_edge = (y[:, 1:, :]).squeeze(axis = 1)  #
+            loss_levels_seg.append(loss_function(y_hat_levels_seg, target_seg))
+            loss_levels_edge.append(loss_function(y_hat_levels_edge, target_edge))
 
-        # target[n].shape = (B, 2, H, W)
-        # target_seg[n] = target_seg[n][B, :1, H, W]
-        # target_edge[n] = target_seg[n][B, 1:, H, W]
+        loss_deep_super_seg = torch.sum(torch.stack(loss_levels_seg))
+        loss_deep_super_edge = torch.sum(torch.stack(loss_levels_edge))
+        loss_deep_super = loss_deep_super_seg + loss_deep_super_edge
+        y_hat_seg = y_hat[:, :2, :]
+        y_hat_edge = y_hat[:, 2:, :]
 
-        # loss_seg = loss_function(y_hat_levels_seg, target_seg)
-        # loss_edge = loss_function(y_hat_levels_edge, target_edge) XXXXX
+        target_seg = (Target[0][:, :1, :]).squeeze(axis = 1)  #
+        target_edge = (Target[0][:, 1:, :]).squeeze(axis = 1) #
+        loss_final_seg = loss_function(y_hat_seg, target_seg)
+        loss_final_edge = loss_function(y_hat_edge, target_edge)
+        loss_final = loss_final_seg + loss_final_edge
 
-    # Overall Loss
-    loss_final = loss_function(y_hat, target[0])
-
-    # Pyramid Losses (Deep Supervision)
-    for y_hat_el, y in zip(y_hat_levels, target):
-        loss_levels.append(loss_function(y_hat_el, y))
-    loss_deep_super = torch.sum(torch.stack(loss_levels))
+    else:
+        # Overall Loss
+        loss_final = loss_function(y_hat, target[0])
+        # Pyramid Losses (Deep Supervision)
+        for y_hat_el, y in zip(y_hat_levels, target):
+            loss_levels.append(loss_function(y_hat_el, y))
+        loss_deep_super = torch.sum(torch.stack(loss_levels))
 
     loss = loss_final + loss_deep_super
 
     # dice cofficient
-    smooth = 0.0001
-    target = target[0]
-
-    edge_target = target[:, 1]
-    N = edge_target.size(0)
-    edge_pred = (y_hat[:, 1:] > 0).float()
-    edge_pred_flat = edge_pred.view(N, -1)
-    edge_target_flat = edge_target.view(N, -1)
-
-    seg_target = target[:, 0]
-    n = seg_target.size(0)
-    seg_pred = (y_hat[:, 0] > 0).float()
-    seg_pred_flat = seg_pred.view(n, -1)
-    seg_target_flat = seg_target.view(n, -1)
-
-    seg_intersection = (seg_pred_flat * seg_target_flat).sum(1)
-    seg_unionset = seg_pred_flat.sum(1) + seg_target_flat.sum(1)
-    seg_acc = (2 * (seg_intersection + smooth) / (seg_unionset + smooth)).mean()
-
-    edge_intersection = (edge_pred_flat * edge_target_flat).sum(1)
-    edge_unionset = edge_pred_flat.sum(1) + edge_target_flat.sum(1)
-    edge_acc = (2 * (edge_intersection + smooth) / (edge_unionset + smooth)).mean()
-
-
-    # target = target[0]
-    # seg_pred = torch.argmax(y_hat[:, 1:], dim=1)
-    # seg_acc = (seg_pred == target[:, 1]).float().mean()
-    #
-    # edge_pred = (y_hat[:, 0] > 0).float()
-    # edge_acc = (edge_pred == target[:, 0]).float().mean()
-    # print("target shape: ", target.shape)
-    # print("target[:, 1] shape: ", target[:, 1].shape)
-    # print("target[:, 1] mean: ", target[:, 1].mean())
-    # print("target[:, 1] max: ", target[:, 1].max())
-    # print(" seg_pred: ",  seg_pred.shape)
-    # print(" seg_pred max: ", seg_pred.max())
-    # print(" seg_pred min: ", seg_pred.min())
-    # print(" seg_acc: ", seg_acc)
-    # print("  y_hat[:, 1:]: ", y_hat[:, 1:].shape)
-    # print("  y_hat[:, 1:] mean: ", y_hat[:, 1:].mean())
-    # print("  y_hat[:, 1:] max: ", y_hat[:, 1:].max())
-    # print("  y_hat[:, 1:] min: ", y_hat[:, 1:].min())
-    # print("equal: ",seg_pred == target[:, 1])
-    # print("  y_hat[:, 0] max: ", y_hat[:, 0].max())
-    # print("  y_hat[:, 0] min: ", y_hat[:, 0].min())
-
-    # print("edge_pred shape: ", edge_pred.shape)
-    # print("edge_pred max: ", edge_pred.max())
-    # print("edge_pred =1: ", edge_pred.sum())
-    # print("edge_pred min: ", edge_pred.min())
-    # #print("edge : ", edge_pred)
-    # print("target[:, 0] shape: ", target[:, 0].shape)
-    # print("target[:, 0] =3: ", ((target[:, 0]==3).sum())/3)
-    # print("target[:, 0] =2: ", ((target[:, 0] == 2).sum())/2)
-    # print("target[:, 0] =1: ", (target[:, 0] == 1).sum())
-    # print("target[:, 0] =0: ", (target[:, 0] == 0).sum())
-    # print("target[:, 0] max: ", target[:, 0].max())
-    # print("target[:, 0] min: ", target[:, 0].min())
-
+    if config['loss_args']['type'] == 'CE':
+        seg_acc , edge_acc = CEDiceCofficient(target= target, y_hat= y_hat)
+    else:
+        seg_acc, edge_acc = BCEDiceCofficient(target= target, y_hat= y_hat)
     metrics.step(Loss=loss, SegAcc=seg_acc, EdgeAcc=edge_acc)
 
     return dict(
@@ -238,6 +205,15 @@ def train(dataset):
         for param in model.parameters():
             param.grad = None
         res = full_forward(model, img, target, metrics)
+
+        # creating visualization of results
+        if i == 1:
+            targets = torch.cat([norm_0_1(res['target'][0, i, ::]) for i in range(res['target'].shape[1])], 1).detach().cpu()
+            y_hats = torch.cat([norm_0_1(res['y_hat'][0, i, ::]) for i in range(res['target'].shape[1])], 1).detach().cpu()
+            y_hats_p = torch.cat([(res['y_hat'][0, i, ::] > 0) for i in range(res['target'].shape[1])], 1).detach().type(torch.FloatTensor).cpu()
+            all = torch.cat([targets, y_hats, y_hats_p], 0)
+            imagesc(all, show=False, save='sample_visualization.png')
+
         res['loss'].backward()
         opt.step()
 
@@ -296,7 +272,12 @@ if __name__ == "__main__":
 
     # models
     modelclass = get_model(config['model'])
-    model = modelclass(**config['model_args'])
+    basic_output = 2
+    if config['loss_args']['type'] == 'CE':
+        output_channels = basic_output * 2
+    else:
+        output_channels = basic_output
+    model = modelclass(**config['model_args'], output_channels=output_channels)
 
     # resume training from checkpoints
     if cli_args['--resume']:
