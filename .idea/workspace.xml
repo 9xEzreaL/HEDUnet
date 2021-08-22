@@ -2,13 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="0c1acbea-f6f3-4474-8742-93bfefc8c49e" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/sample_visualization.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/DiceCofficient.py" beforeDir="false" afterPath="$PROJECT_DIR$/DiceCofficient.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/deep_learning/metrics_hedunet.py" beforeDir="false" afterPath="$PROJECT_DIR$/deep_learning/metrics_hedunet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/deep_learning/models/hed_unet.py" beforeDir="false" afterPath="$PROJECT_DIR$/deep_learning/models/hed_unet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/train.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

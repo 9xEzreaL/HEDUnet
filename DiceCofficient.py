@@ -100,7 +100,7 @@ def CEDiceCofficient(target , y_hat):
 # for seg
     seg_target = target[:, 0, ::]  # [8,256,224]
     seg_pred = (y_hat[:, 1] > 0).float()
-    seg_pred = seg_pred.view(n, -1)  # (B * H * W, C)
+    seg_pred = seg_pred.view(n, -1)
     seg_target = seg_target.view(n, -1)
     dice_tp_seg = (seg_pred * seg_target).sum(1)
     dice_div_seg = seg_pred.sum(1) + seg_target.sum(1)
