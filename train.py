@@ -16,6 +16,7 @@ from pathlib import Path
 from docopt import docopt
 from tqdm import tqdm
 from data_loading import get_dataset
+
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -37,9 +38,34 @@ except ModuleNotFoundError as e:
 from deep_learning import get_loss, get_model, Metrics, flatui_cmap
 from deep_learning.utils.data import Augment
 
-cli_args = docopt(__doc__, version="Usecase 2 Training Script 1.0")
-config_file = Path(cli_args['--config'])
-config = yaml.load(config_file.open(), Loader=yaml.SafeLoader)
+
+def to_8bit(x):
+    if type(x) == torch.Tensor:
+        x = (x / x.max() * 255).numpy().astype(np.uint8)
+    else:
+        x = (x / x.max() * 255).astype(np.uint8)
+
+    if len(x.shape) == 2:
+        x = np.concatenate([np.expand_dims(x, 2)]*3, 2)
+    return x
+
+
+def imagesc(x, show=True, save=None):
+    # switch
+    if (len(x.shape) == 3) & (x.shape[0] == 3):
+        x = np.transpose(x, (1, 2, 0))
+
+    if isinstance(x, list):
+        x = [to_8bit(y) for y in x]
+        x = np.concatenate(x, 1)
+        x = Image.fromarray(x)
+    else:
+        x = x - x.min()
+        x = Image.fromarray(to_8bit(x))
+    if show:
+        x.show()
+    if save:
+        x.save(save)
 
 
 def showexample(idx, img, target, prediction):
@@ -70,10 +96,6 @@ def showexample(idx, img, target, prediction):
 
 
 def get_sobel():
-    # new   ==========
-    cuda = True if torch.cuda.is_available() else False
-    dev = torch.device("cpu") if not cuda else torch.device("cuda")
-
     SOBEL = nn.Conv2d(1, 2, 1, padding=1, padding_mode='replicate', bias=False)
     SOBEL.weight.requires_grad = False
     SOBEL.weight.set_(torch.Tensor([[
@@ -110,18 +132,8 @@ def get_pyramid(mask, stack_height=1, hed=False):
 
     return targets
 
-def norm_0_1(x0):
-    x = 1 * x0
-    x = x - x.min()
-    return x / x.max()
 
 def full_forward(model, img, target, metrics):
-    # new   ========
-    cuda = True if torch.cuda.is_available() else False
-    dev = torch.device("cpu") if not cuda else torch.device("cuda")
-    loss_args = {"type":"CE"}
-    loss_function = get_loss(loss_args=loss_args)
-
     img = img.to(dev)
     target = target.to(dev)
     y_hat, y_hat_levels = model(img)
@@ -132,50 +144,51 @@ def full_forward(model, img, target, metrics):
 
     # loss
     if config['loss_args']['type'] == 'CE':
-        y_hat_levels = [x.view(x.shape[0], x.shape[1], x.shape[2]*x.shape[3]) for x in y_hat_levels]
-        n = y_hat.size(0)
-        y_hat = y_hat.view(n, 4, -1)
+        y_hat_levels = [x.view(x.shape[0], x.shape[1],
+                               x.shape[2]*x.shape[3]) for x in y_hat_levels]
+        n = y_hat.size(0)  # batch_size
+        Y_hat = y_hat.view(n, 4, -1)
         Target = [x.view(x.shape[0], x.shape[1], x.shape[2]*x.shape[3])
-                      .type(torch.cuda.LongTensor) for x in target]
+                  .type(torch.cuda.LongTensor) for x in target]
 
         for y_hat_el, y in zip(y_hat_levels, Target):
-            print('#')
-            print(y_hat_el.shape)
-            print(y.shape)
+            # print("y_hat_el:", y_hat_el)
             y_hat_levels_seg = y_hat_el[:, :2, :]
             y_hat_levels_edge = y_hat_el[:, 2:, :]
-            target_seg = (y[:, :1, :]).squeeze(axis = 1)  #
-            target_edge = (y[:, 1:, :]).squeeze(axis = 1)  #
+            target_seg = (y[:, :1, :]).squeeze(axis=1)
+            target_edge = (y[:, 1:, :]).squeeze(axis=1)
             loss_levels_seg.append(loss_function(y_hat_levels_seg, target_seg))
-            loss_levels_edge.append(loss_function(y_hat_levels_edge, target_edge))
+            loss_levels_edge.append(loss_function(
+                y_hat_levels_edge, target_edge))
 
         loss_deep_super_seg = torch.sum(torch.stack(loss_levels_seg))
         loss_deep_super_edge = torch.sum(torch.stack(loss_levels_edge))
         loss_deep_super = loss_deep_super_seg + loss_deep_super_edge
-        y_hat_seg = y_hat[:, :2, :]
-        y_hat_edge = y_hat[:, 2:, :]
+        y_hat_seg = Y_hat[:, :2, :]
+        y_hat_edge = Y_hat[:, 2:, :]
 
-        target_seg = (Target[0][:, :1, :]).squeeze(axis = 1)  #
-        target_edge = (Target[0][:, 1:, :]).squeeze(axis = 1) #
+        target_seg = (Target[0][:, :1, :]).squeeze(axis=1)
+        target_edge = (Target[0][:, 1:, :]).squeeze(axis=1)
         loss_final_seg = loss_function(y_hat_seg, target_seg)
         loss_final_edge = loss_function(y_hat_edge, target_edge)
         loss_final = loss_final_seg + loss_final_edge
 
     else:
+        for y_hat_el, y in zip(y_hat_levels, target):
+            loss_levels.append(loss_function(y_hat_el, y))
         # Overall Loss
         loss_final = loss_function(y_hat, target[0])
         # Pyramid Losses (Deep Supervision)
-        for y_hat_el, y in zip(y_hat_levels, target):
-            loss_levels.append(loss_function(y_hat_el, y))
         loss_deep_super = torch.sum(torch.stack(loss_levels))
 
     loss = loss_final + loss_deep_super
 
-    # dice cofficient
+    target = target[0]
     if config['loss_args']['type'] == 'CE':
-        seg_acc , edge_acc = CEDiceCofficient(target= target, y_hat= y_hat)
+        seg_acc, edge_acc = CEDiceCofficient(target=target, y_hat=y_hat)
     else:
-        seg_acc, edge_acc = BCEDiceCofficient(target= target, y_hat= y_hat)
+        seg_acc, edge_acc = BCEDiceCofficient(target=target, y_hat=y_hat)
+
     metrics.step(Loss=loss, SegAcc=seg_acc, EdgeAcc=edge_acc)
 
     return dict(
@@ -186,6 +199,12 @@ def full_forward(model, img, target, metrics):
         loss_final=loss_final,
         loss_deep_super=loss_deep_super
     )
+
+
+def norm_0_1(x0):
+    x = 1 * x0
+    x = x - x.min()
+    return x / x.max()
 
 
 def train(dataset):
@@ -201,18 +220,27 @@ def train(dataset):
     epoch += 1
     model.train(True)
     prog = tqdm(data_loader)
-    for i, (img, target) in enumerate(prog): 
+    for i, (img, target) in enumerate(prog):
+
         for param in model.parameters():
             param.grad = None
         res = full_forward(model, img, target, metrics)
 
         # creating visualization of results
-        if i == 1:
-            targets = torch.cat([norm_0_1(res['target'][0, i, ::]) for i in range(res['target'].shape[1])], 1).detach().cpu()
-            y_hats = torch.cat([norm_0_1(res['y_hat'][0, i, ::]) for i in range(res['target'].shape[1])], 1).detach().cpu()
-            y_hats_p = torch.cat([(res['y_hat'][0, i, ::] > 0) for i in range(res['target'].shape[1])], 1).detach().type(torch.FloatTensor).cpu()
-            all = torch.cat([targets, y_hats, y_hats_p], 0)
-            imagesc(all, show=False, save='sample_visualization.png')
+        if config['loss_args']['type'] == 'CE':
+            if i == 1:
+                targets = torch.cat([norm_0_1(res['target'][0, i, ::]) for i in range(res['target'].shape[1])],1).detach().cpu()
+                y_hats = torch.cat([norm_0_1(res['y_hat'][0, i, ::]) for i in range(1 , (res['target'].shape[1]) * 2, 2)],1).detach().cpu()
+                y_hats_p = torch.cat([(res['y_hat'][0, i, ::] > 0) for i in range(1, (res['target'].shape[1]) * 2, 2)],1).detach().type(torch.FloatTensor).cpu()
+                all = torch.cat([targets,y_hats, y_hats_p], 0)
+                imagesc(all, show=False, save='sample_visualization.png')
+        else:
+            if i == 1:
+                targets = torch.cat([norm_0_1(res['target'][0, i, ::]) for i in range(res['target'].shape[1])], 1).detach().cpu()
+                y_hats = torch.cat([norm_0_1(res['y_hat'][0, i, ::]) for i in range(res['target'].shape[1])], 1).detach().cpu()
+                y_hats_p = torch.cat([(res['y_hat'][0, i, ::] > 0) for i in range(res['target'].shape[1])], 1).detach().type(torch.FloatTensor).cpu()
+                all = torch.cat([targets, y_hats, y_hats_p], 0)
+                imagesc(all, show=False, save='sample_visualization.png')
 
         res['loss'].backward()
         opt.step()
@@ -228,8 +256,8 @@ def train(dataset):
     #    print(logstr, file=f)
 
     # Save model Checkpoint
-    # torch.save(model.state_dict(), checkpoints / f'{epoch:02d}.pt')
-    torch.save(model, checkpoints / f'{epoch:02d}.pt')
+    torch.save(model.state_dict(), checkpoints / f'{epoch:02d}.pt')
+
 
 @torch.no_grad()
 def val(dataset):
@@ -276,6 +304,7 @@ if __name__ == "__main__":
     if config['loss_args']['type'] == 'CE':
         output_channels = basic_output * 2
     else:
+        print("basic_channel")
         output_channels = basic_output
     model = modelclass(**config['model_args'], output_channels=output_channels)
 
@@ -334,9 +363,9 @@ if __name__ == "__main__":
 
         args_d = {'mask_name': 'bone_resize_B_crop_00',
                   'data_path': os.getenv("HOME") + '/Dataset/OAI_DESS_segmentation/',
-                  'mask_used': [['femur', 'tibia']] ,# [1], [2, 3]],  # ,
+                  'mask_used': [['femur', 'tibia']], # [[1, 2, 3]],[['femur', 'tibia'], [1], [2, 3]],  # ,
                   'scale': 0.5,
-                  'interval': 1,
+                  'interval': 4,
                   'thickness': 0,
                   'method': 'automatic'}
 

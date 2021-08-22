@@ -97,7 +97,6 @@ class HEDUNet(nn.Module):
         else:
             return combined_prediction
 
-
 if __name__ == '__main__':
     model = HEDUNet(input_channels=3)
     y_hat, y_hat_levels = model(torch.rand(2, 3, 224, 224))
