@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
-from DiceCofficient import BCEDiceCofficient, accuracy, CEDiceCofficient
+from DiceCofficient import BCEDiceCofficient, accuracy, CEDiceCofficient, oldCEDiceCofficient
 from torchvision import datasets
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
@@ -96,6 +96,9 @@ def showexample(idx, img, target, prediction):
 
 
 def get_sobel():
+    cuda = True if torch.cuda.is_available() else False
+    dev = torch.device("cpu") if not cuda else torch.device("cuda")
+
     SOBEL = nn.Conv2d(1, 2, 1, padding=1, padding_mode='replicate', bias=False)
     SOBEL.weight.requires_grad = False
     SOBEL.weight.set_(torch.Tensor([[
@@ -134,6 +137,19 @@ def get_pyramid(mask, stack_height=1, hed=False):
 
 
 def full_forward(model, img, target, metrics):
+    # configurations
+    cli_args = docopt(__doc__, version="Usecase 2 Training Script 1.0")
+    config_file = Path(cli_args['--config'])
+    config = yaml.load(config_file.open(), Loader=yaml.SafeLoader)
+
+    cuda = True if torch.cuda.is_available() else False
+    dev = torch.device("cpu") if not cuda else torch.device("cuda")
+
+    # loss function
+    loss_function = get_loss(config['loss_args'])
+    if type(loss_function) is torch.nn.Module:
+        loss_function = loss_function.to(dev)
+
     img = img.to(dev)
     target = target.to(dev)
     y_hat, y_hat_levels = model(img)
@@ -171,7 +187,7 @@ def full_forward(model, img, target, metrics):
         target_edge = (Target[0][:, 1:, :]).squeeze(axis=1)
         loss_final_seg = loss_function(y_hat_seg, target_seg)
         loss_final_edge = loss_function(y_hat_edge, target_edge)
-        loss_final = loss_final_seg + loss_final_edge
+        loss_final = loss_final_seg + 0 * loss_final_edge
 
     else:
         for y_hat_el, y in zip(y_hat_levels, target):
@@ -185,11 +201,11 @@ def full_forward(model, img, target, metrics):
 
     target = target[0]
     if config['loss_args']['type'] == 'CE':
-        seg_acc, edge_acc = CEDiceCofficient(target=target, y_hat=y_hat)
+        seg_acc, edge_acc = oldCEDiceCofficient(target=target, y_hat=y_hat)
     else:
         seg_acc, edge_acc = BCEDiceCofficient(target=target, y_hat=y_hat)
 
-    metrics.step(Loss=loss, SegAcc=seg_acc, EdgeAcc=edge_acc)
+    metrics.step(Loss=loss, SegAcc=seg_acc, edge_acc=edge_acc)
 
     return dict(
         img=img,
@@ -228,7 +244,7 @@ def train(dataset):
 
         # creating visualization of results
         if config['loss_args']['type'] == 'CE':
-            if i == 1:
+            if i == 100:
                 targets = torch.cat([norm_0_1(res['target'][0, i, ::]) for i in range(res['target'].shape[1])],1).detach().cpu()
                 y_hats = torch.cat([norm_0_1(res['y_hat'][0, i, ::]) for i in range(1 , (res['target'].shape[1]) * 2, 2)],1).detach().cpu()
                 y_hats_p = torch.cat([(res['y_hat'][0, i, ::] > 0) for i in range(1, (res['target'].shape[1]) * 2, 2)],1).detach().type(torch.FloatTensor).cpu()
@@ -256,7 +272,7 @@ def train(dataset):
     #    print(logstr, file=f)
 
     # Save model Checkpoint
-    torch.save(model.state_dict(), checkpoints / f'{epoch:02d}.pt')
+    torch.save(model, checkpoints / f'{epoch:02d}.pt')
 
 
 @torch.no_grad()
@@ -371,9 +387,9 @@ if __name__ == "__main__":
 
         # datasets
         trn_dataset = LoaderImorphics(args_d, subjects_list=list(range(10, 71)))
-        print(len(trn_dataset))
+        print('trn_dataset: ',len(trn_dataset))
         val_dataset = LoaderImorphics(args_d, subjects_list=list(range(1, 10)) + list(range(71, 89)))
-        print(len(val_dataset))
+        print('val_dataset: ',len(val_dataset))
 
     # loss function
     loss_function = get_loss(config['loss_args'])

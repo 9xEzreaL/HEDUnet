@@ -14,12 +14,14 @@ class Metrics():
     def step(self, **additional_terms):
         for term in additional_terms:
             if term not in self.running_agg:
+                # print("term: ",term)
                 self.running_agg[term] = additional_terms[term].detach()
                 self.running_count[term] = 1
             else:
                 self.running_agg[term] += additional_terms[term].detach()
                 self.running_count[term] += 1
-
+                # print("metrics running_agg[term]", self.running_agg[term])
+                # print("metrics running_count[term]", self.running_count[term])
 
     @torch.no_grad()
     def peek(self):
