@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+
 def accuracy(target, y_hat):
     seg_pred = torch.argmax(y_hat[:, 1:], dim=1)
     seg_acc = (seg_pred == target[:, 1]).float().mean()
@@ -36,71 +37,35 @@ def BCEDiceCofficient(target , y_hat):
 
     return seg_acc , edge_acc
 
-
-# dice cofficient for CE
 def oldCEDiceCofficient(target , y_hat):
-    n = int(y_hat.shape[1] / 2) # 2
-    # for seg
-    seg_target = target[:, 0, ::]  # [8,256,224]
-    seg_pred = y_hat[:, :2]  # [8,2,256*224]
-    seg_probs = seg_pred.reshape(seg_pred.shape[0] * seg_pred.shape[2] * seg_pred.shape[3],
-                                 seg_pred.shape[1])  # (B * H * W, C)
-    #softmax
+    n = int(y_hat.shape[0]) # 2
+    seg_target = target[:n, 0, ::]  # [256,224]
+    edge_target = target[:n, 1, ::]
+    seg_target = seg_target.view(n,-1)
+    edge_target = edge_target.view(n,-1)
+    seg_pred = y_hat[:n, :2, ::]  # [8,2,256,224]
+    edge_pred = y_hat[:n, 2:, ::]
+
     softmax_func = nn.Softmax(dim=1)
-    seg_probs = softmax_func(seg_probs)
+    seg_pred = softmax_func(seg_pred)
+    edge_pred = softmax_func(edge_pred)
+    seg_pred = torch.max(seg_pred, 1)[1]
+    edge_pred = torch.max(edge_pred, 1)[1]
+    seg_pred = seg_pred.view(n,-1)  # (2, 256*224)
+    edge_pred = edge_pred.view(n,-1)
 
-    _, seg_pred = torch.max(seg_probs, 1)
-    seg_target = seg_target.reshape(seg_target.shape[0] * seg_target.shape[1] * seg_target.shape[2])
+    # seg_target = seg_target.reshape(seg_target.shape[0] * seg_target.shape[1])
+    # edge_target = edge_target.reshape(edge_target.shape[0] * edge_target.shape[1])
 
-    dice_seg = np.zeros(n)
-    dice_tp_seg = np.zeros(n)
-    dice_div_seg = np.zeros(n)
-    for i in range(n):
-        dice_tp_seg[i] += ((seg_pred == i) & (seg_target == i)).sum().item()
-        dice_div_seg[i] += ((seg_pred == i).sum().item() + (seg_target == i).sum().item())
-        dice_seg[i] = (2 * dice_tp_seg[i]) / dice_div_seg[i]
-    seg_acc = torch.from_numpy(dice_seg[1:])
-    # for edge
-    edge_target = target[:, 1]  # [8,256,224]
-    edge_pred = y_hat[:, 2:]  # [8,2,256*224]
-    edge_probs = edge_pred.reshape(edge_pred.shape[0] * edge_pred.shape[2] * edge_pred.shape[3],
-                                   edge_pred.shape[1])  # (B * H * W, C)
-    # softmax
-    softmax_func = nn.Softmax(dim=1)
-    edge_probs = softmax_func(edge_probs)
+    dice_tp_seg = (seg_pred * seg_target).sum()
+    dice_div_seg = seg_pred.sum() + seg_target.sum()
+    seg_acc = ((2 * dice_tp_seg) / dice_div_seg).mean()
 
-    _, edge_pred = torch.max(edge_probs, 1)
-    edge_target = edge_target.reshape(edge_target.shape[0] * edge_target.shape[1] * edge_target.shape[2])
-    dice_edge = np.zeros(n)
-    dice_tp_edge = np.zeros(n)
-    dice_div_edge = np.zeros(n)
-    for i in range(n):
-        dice_tp_edge[i] += ((edge_pred == i) & (edge_target == i)).sum().item()
-        dice_div_edge[i] += ((edge_pred == i).sum().item() + (edge_target == i).sum().item())
-        dice_edge[i] = (2 * dice_tp_edge[i]) / dice_div_edge[i]
-    edge_acc = torch.from_numpy(dice_edge[1:])
+    dice_tp_edge = (edge_pred * edge_target).sum()
+    dice_div_edge = edge_pred.sum() + edge_target.sum()
+    edge_acc = ((2 * dice_tp_edge) / dice_div_edge).mean()
 
     return seg_acc, edge_acc
-
-# def oldCEDiceCofficient(target , y_hat):
-#     n = int(y_hat.shape[1] / 2) # 2
-#     seg_target = target[:, 0, ::]  # [8,256,224]
-#     seg_pred = y_hat[:, :2]  # [8,2,256*224]
-#     seg_probs = seg_pred.reshape(seg_pred.shape[0] * seg_pred.shape[2] * seg_pred.shape[3],
-#                                  seg_pred.shape[1])  # (B * H * W, C)
-#     _, seg_pred = torch.max(seg_probs, 1)
-#     seg_target = seg_target.reshape(seg_target.shape[0] * seg_target.shape[1] * seg_target.shape[2])
-#
-#     dice_seg = np.zeros(n)
-#     dice_tp_seg = np.zeros(n)
-#     dice_div_seg = np.zeros(n)
-#     for i in range(n):
-#         dice_tp_seg[i] += ((seg_pred == i) & (seg_target == i)).sum().item()
-#         dice_div_seg[i] += ((seg_pred == i).sum().item() + (seg_target == i).sum().item())
-#         dice_seg[i] = (2 * dice_tp_seg[i]) / dice_div_seg[i]
-#     seg_acc = torch.from_numpy(dice_seg[1:])
-#
-#     return seg_acc, seg_acc
 
 
 # dice cofficient for CE

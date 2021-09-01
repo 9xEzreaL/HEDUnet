@@ -247,8 +247,14 @@ def train(dataset):
             if i == 100:
                 targets = torch.cat([norm_0_1(res['target'][0, i, ::]) for i in range(res['target'].shape[1])],1).detach().cpu()
                 y_hats = torch.cat([norm_0_1(res['y_hat'][0, i, ::]) for i in range(1 , (res['target'].shape[1]) * 2, 2)],1).detach().cpu()
+                softmax_func = nn.Softmax(dim=0)
+                soft_seg = res['y_hat'][0, :2, ::]
+                soft_edge = res['y_hat'][0, 2:, ::]
+                soft_seg = torch.max(softmax_func(soft_seg), 0)[1].float()
+                soft_edge = torch.max(softmax_func(soft_edge), 0)[1].float()
+                y_hats_s = torch.cat([soft_seg, soft_edge],1).detach().cpu()
                 y_hats_p = torch.cat([(res['y_hat'][0, i, ::] > 0) for i in range(1, (res['target'].shape[1]) * 2, 2)],1).detach().type(torch.FloatTensor).cpu()
-                all = torch.cat([targets,y_hats, y_hats_p], 0)
+                all = torch.cat([targets,y_hats, y_hats_s, y_hats_p], 0)
                 imagesc(all, show=False, save='sample_visualization.png')
         else:
             if i == 1:
